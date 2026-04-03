@@ -50,10 +50,16 @@ D) GAME OVER (system prompt says [GAME OVER])
    → No tool calls. Respond with text only.
    → Structure: [Encouragement] → [2-3 key moments as questions: "After move 8, what do you think went wrong?"] → [One homework: "Next game, practice X!"]
 
-E) OFF-TOPIC (anything not about games or learning)
-   → Redirect: "That's interesting, but I'm built to help with games and learning. Want to play something?"
+E) GENERAL LEARNING (math, science, history, etc.)
+   → Help them! You are a K-12 tutor. Use the question-first teaching pattern.
+   → Math: walk through step-by-step, ask "what do you think comes next?"
+   → Science: explain with simple analogies, ask them to predict
+   → Keep it age-appropriate and educational
 
-F) SAFETY VIOLATION (see Section 2)
+F) OFF-TOPIC (not about learning — celebrities, social media, etc.)
+   → Redirect: "That's interesting, but I'm built to help with learning. Want to play a game or work on homework?"
+
+G) SAFETY VIOLATION (see Section 2)
    → Use the safety response. Override all other behavior.
 
 ══════════════════════════════════════════════════
@@ -591,11 +597,52 @@ PGN: ${appContext.pgn || "none"}`;
           // ===================== WEATHER TOOLS =====================
           } else if (t.name === "weather_get_current") {
             baseToolDef.execute = async (input: Record<string, unknown>) => {
-              return { status: "launched", location: input.location, message: `Opening weather dashboard for ${input.location}.` };
+              const location = input.location as string;
+              try {
+                const apiKey = process.env.OPENWEATHER_API_KEY;
+                if (!apiKey) {
+                  // Return mock data for demo
+                  return {
+                    status: "success",
+                    location,
+                    temperature: "72°F (22°C)",
+                    description: "Partly cloudy",
+                    humidity: "45%",
+                    windSpeed: "8 mph",
+                    feelsLike: "70°F",
+                    high: "78°F",
+                    low: "64°F",
+                    note: "Demo data — set OPENWEATHER_API_KEY for live weather",
+                  };
+                }
+                const res = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(location)}&appid=${apiKey}&units=imperial`);
+                const data = await res.json();
+                if (data.cod !== 200) return { error: data.message || "Location not found" };
+                return {
+                  status: "success",
+                  location: data.name,
+                  temperature: `${Math.round(data.main.temp)}°F (${Math.round((data.main.temp - 32) * 5/9)}°C)`,
+                  description: data.weather[0]?.description || "unknown",
+                  humidity: `${data.main.humidity}%`,
+                  windSpeed: `${Math.round(data.wind.speed)} mph`,
+                  feelsLike: `${Math.round(data.main.feels_like)}°F`,
+                  high: `${Math.round(data.main.temp_max)}°F`,
+                  low: `${Math.round(data.main.temp_min)}°F`,
+                };
+              } catch {
+                return { error: `Could not fetch weather for ${location}` };
+              }
             };
           } else if (t.name === "weather_get_forecast") {
             baseToolDef.execute = async (input: Record<string, unknown>) => {
-              return { status: "launched", location: input.location, days: input.days || 5, message: `Opening ${input.days || 5}-day forecast for ${input.location}.` };
+              const location = input.location as string;
+              const days = (input.days as number) || 5;
+              return {
+                status: "launched",
+                location,
+                days,
+                message: `Opening ${days}-day forecast for ${location}.`,
+              };
             };
 
           // ===================== SPOTIFY TOOLS =====================

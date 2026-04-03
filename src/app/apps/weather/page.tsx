@@ -27,7 +27,8 @@ interface ForecastDay {
 export default function WeatherApp() {
   const sdkRef = useRef<ChatBridgeSDK | null>(null);
   const [sessionActive, setSessionActive] = useState(false);
-  const [isEmbedded] = useState(() => typeof window !== "undefined" && window.parent !== window);
+  const [isEmbedded, setIsEmbedded] = useState(false);
+  useEffect(() => { setIsEmbedded(window.parent !== window); }, []);
 
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [forecast, setForecast] = useState<ForecastDay[] | null>(null);
