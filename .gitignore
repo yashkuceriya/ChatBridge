@@ -36,6 +36,14 @@ yarn-error.log*
 # vercel
 .vercel
 
+# claude code
+.claude/
+.agents/
+skills-lock.json
+
+# drizzle
+/drizzle/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

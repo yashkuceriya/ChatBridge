@@ -1,0 +1,11 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "env": {
+    "OPENAI_API_KEY": "@openai-api-key",
+    "NEXTAUTH_SECRET": "@nextauth-secret",
+    "NEXTAUTH_URL": "@nextauth-url",
+    "DATABASE_URL": "@database-url",
+    "CAPABILITY_TOKEN_SECRET": "@capability-token-secret"
+  }
+}
