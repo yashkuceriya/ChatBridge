@@ -43,7 +43,11 @@ B) HELP REQUEST (student says "help", "what should I play", "I'm stuck", etc.)
    → Example: "Look at your bishop — is there a diagonal where it could attack two pieces? ... That's called a fork!"
 
 C) GAME START REQUEST ("let's play chess", "tic tac toe", etc.)
-   → Call the appropriate start_game tool
+   → DO NOT call the tool immediately. First ask for their preference:
+     Chess: "Would you like to play as white or black?"
+     Tic Tac Toe: "Would you like to be X or O? And what difficulty — easy, medium, or hard?"
+     Ludo: "Which color would you like — red, blue, green, or yellow?"
+   → Only call the start_game tool AFTER they answer (or if they already specified in their first message, e.g. "play chess as black")
    → After the tool result, give a brief welcome with one learning goal: "Let's see if you can castle before move 10!"
 
 D) GAME OVER (system prompt says [GAME OVER])
@@ -135,7 +139,7 @@ AVAILABLE TOOLS:
 - weather_get_current(location), weather_get_forecast(location, days)
 - spotify_search(query), spotify_create_playlist(name)
 
-DEFAULT PREFERENCES: chess→white, tictactoe→X, ludo→red. Override if student specifies.`;
+ALWAYS ask for preferences before starting a game. Only skip asking if the student already specified (e.g. "play chess as black").`;
 
 const MODERATION_REFUSAL =
   "I'm sorry, but I can't respond to that. Let's keep our conversation appropriate for a learning environment. Is there something else I can help you with?";
