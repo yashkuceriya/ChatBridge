@@ -56,16 +56,21 @@ D) GAME OVER (system prompt says [GAME OVER])
    → No tool calls. Respond with text only.
    → Structure: [Encouragement] → [2-3 key moments as questions: "After move 8, what do you think went wrong?"] → [One homework: "Next game, practice X!"]
 
-E) GENERAL LEARNING (math, science, history, etc.)
+E) APP REQUEST — WEATHER / SPOTIFY
+   → Weather: call weather_get_current or weather_get_forecast with the location
+   → Spotify: call spotify_search with the query. Share the results with the student.
+   → These are valid app tools — always use them when requested.
+
+F) GENERAL LEARNING (math, science, history, etc.)
    → Help them! You are a K-12 tutor. Use the question-first teaching pattern.
    → Math: walk through step-by-step, ask "what do you think comes next?"
    → Science: explain with simple analogies, ask them to predict
    → Keep it age-appropriate and educational
 
-F) OFF-TOPIC (not about learning — celebrities, social media, etc.)
+G) OFF-TOPIC (not about learning — celebrities, gossip, social media drama, etc.)
    → Redirect: "That's interesting, but I'm built to help with learning. Want to play a game or work on homework?"
 
-G) SAFETY VIOLATION (see Section 2)
+H) SAFETY VIOLATION (see Section 2)
    → Use the safety response. Override all other behavior.
 
 ══════════════════════════════════════════════════
@@ -655,7 +660,64 @@ PGN: ${appContext.pgn || "none"}`;
           // ===================== SPOTIFY TOOLS =====================
           } else if (t.name === "spotify_search") {
             baseToolDef.execute = async (input: Record<string, unknown>) => {
-              return { status: "launched", query: input.query, message: `Searching Spotify for "${input.query}".` };
+              const query = input.query as string;
+              const type = (input.type as string) || "track";
+
+              // Try Spotify Web API with client credentials (no user auth needed for search)
+              const clientId = process.env.SPOTIFY_CLIENT_ID;
+              const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
+
+              if (clientId && clientSecret) {
+                try {
+                  // Get client credentials token
+                  const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/x-www-form-urlencoded",
+                      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+                    },
+                    body: "grant_type=client_credentials",
+                  });
+                  const tokenData = await tokenRes.json();
+
+                  // Search
+                  const searchRes = await fetch(
+                    `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=${type}&limit=5`,
+                    { headers: { Authorization: `Bearer ${tokenData.access_token}` } }
+                  );
+                  const searchData = await searchRes.json();
+
+                  const tracks = searchData.tracks?.items?.map((t: any) => ({
+                    name: t.name,
+                    artist: t.artists?.map((a: any) => a.name).join(", "),
+                    album: t.album?.name,
+                    duration: `${Math.floor(t.duration_ms / 60000)}:${String(Math.floor((t.duration_ms % 60000) / 1000)).padStart(2, "0")}`,
+                  })) || [];
+
+                  return {
+                    status: "success",
+                    query,
+                    resultCount: tracks.length,
+                    results: tracks,
+                  };
+                } catch {
+                  // Fall through to mock
+                }
+              }
+
+              // Mock results when no Spotify credentials
+              return {
+                status: "success",
+                query,
+                resultCount: 3,
+                results: [
+                  { name: query, artist: "Various Artists", album: "Top Hits" },
+                  { name: `Best of ${query}`, artist: "Various", album: "Greatest Hits" },
+                  { name: `${query} (Live)`, artist: "Various Artists", album: "Live Sessions" },
+                ],
+                mock: true,
+                note: "Demo results — set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET for live search",
+              };
             };
           } else if (t.name === "spotify_create_playlist") {
             baseToolDef.execute = async (input: Record<string, unknown>) => {
