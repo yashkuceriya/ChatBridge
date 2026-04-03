@@ -21,15 +21,26 @@ function SignInForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [errorMsg, setErrorMsg] = useState("");
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    await signIn("credentials", {
+    setErrorMsg("");
+
+    const result = await signIn("credentials", {
       email,
       password,
-      callbackUrl,
+      redirect: false,
     });
-    setLoading(false);
+
+    if (result?.error) {
+      setErrorMsg("Invalid email or password.");
+      setLoading(false);
+    } else {
+      // Successful — redirect manually
+      window.location.href = callbackUrl;
+    }
   }
 
   return (
@@ -48,11 +59,11 @@ function SignInForm() {
         </div>
 
         {/* Error message */}
-        {error && (
+        {(error || errorMsg) && (
           <div className="rounded-lg border border-red-800/50 bg-red-950/30 px-4 py-3 text-center text-sm text-red-400">
-            {error === "CredentialsSignin"
+            {errorMsg || (error === "CredentialsSignin"
               ? "Invalid email or password."
-              : "Something went wrong. Please try again."}
+              : "Something went wrong. Please try again.")}
           </div>
         )}
 
