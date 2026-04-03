@@ -6,6 +6,8 @@ import { logAudit } from "@/lib/orchestrator/audit";
 import { moderateContent, k12ContentCheck } from "@/lib/moderation";
 import { createCapabilityToken } from "@/lib/security/capability-token";
 import { checkRateLimit, TOOL_RATE_LIMIT } from "@/lib/security/rate-limiter";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 // Ensure apps are registered
 registerBuiltinApps();
@@ -35,8 +37,11 @@ export async function POST(req: Request) {
       args,
       conversationId = "default",
       appSessionId: requestedSessionId,
-      userId = "default-user",
+      userId: bodyUserId,
     } = body;
+
+    const session = await getServerSession(authOptions);
+    const userId = (session?.user as any)?.id || bodyUserId || "default-user";
 
     if (!toolName || typeof toolName !== "string") {
       return NextResponse.json(

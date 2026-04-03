@@ -16,6 +16,8 @@ import { logAudit } from "@/lib/orchestrator/audit";
 import { checkRateLimit, CHAT_RATE_LIMIT } from "@/lib/security/rate-limiter";
 import { getCurrentPolicy } from "@/lib/orchestrator/policy-engine";
 import { findBestMove, evaluatePosition } from "@/lib/chess-engine";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 // Register built-in apps on module load
 registerBuiltinApps();
@@ -210,8 +212,9 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { messages, appContext } = body;
 
-    const userId = "default-user";
-    const conversationId = "default";
+    const session = await getServerSession(authOptions);
+    const userId = (session?.user as any)?.id || "default-user";
+    const conversationId = body.conversationId || "default";
 
     // --- Rate limiting ---
     const rateKey = `chat:${userId}`;
