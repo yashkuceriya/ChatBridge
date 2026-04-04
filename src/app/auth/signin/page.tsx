@@ -116,9 +116,28 @@ function SignInForm() {
           </button>
         </form>
 
-        <p className="text-center text-xs text-zinc-600">
-          Demo mode — any email and password will work.
-        </p>
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-1.5">
+          <p className="text-[11px] font-medium text-zinc-400 text-center">Demo Accounts</p>
+          <div className="space-y-1">
+            {[
+              { role: "Student", email: "student@chatbridge.edu", pw: "student123" },
+              { role: "Teacher", email: "teacher@chatbridge.edu", pw: "teacher123" },
+            ].map((a) => (
+              <button
+                key={a.role}
+                type="button"
+                onClick={() => { setEmail(a.email); setPassword(a.pw); }}
+                className="flex items-center justify-between w-full rounded-md bg-zinc-800/50 px-2.5 py-1.5 text-left hover:bg-zinc-800 transition-colors"
+              >
+                <span className="text-[11px] text-zinc-400">
+                  <span className="font-medium text-zinc-300">{a.role}</span> — {a.email}
+                </span>
+                <span className="text-[10px] text-zinc-600">{a.pw}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-zinc-600 text-center">Click to auto-fill</p>
+        </div>
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ import { ChatInput } from "@/components/chat/chat-input";
 import { Sidebar } from "@/components/layout/sidebar";
 import { AppRuntime } from "@/components/apps/app-runtime";
 import { useConversations, DbMessage } from "@/hooks/use-conversations";
+import { useSession } from "next-auth/react";
 import { Shield, X } from "lucide-react";
 
 interface ActiveApp {
@@ -52,12 +53,62 @@ function dbMessageToUIMessage(msg: DbMessage): UIMessage {
   };
 }
 
+const GRADE_BANDS = [
+  { id: "K-2", label: "K-2nd", emoji: "🧒", ages: "5-7" },
+  { id: "3-5", label: "3rd-5th", emoji: "📚", ages: "8-10" },
+  { id: "6-8", label: "6th-8th", emoji: "🔬", ages: "11-13" },
+  { id: "9-12", label: "9th-12th", emoji: "🎓", ages: "14-18" },
+];
+
+function GradeSelector({ onSelect }: { onSelect: (grade: string) => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/95 backdrop-blur-sm">
+      <div className="w-full max-w-md p-6 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 mx-auto mb-4">
+          <span className="text-3xl">🌉</span>
+        </div>
+        <h2 className="text-xl font-bold text-zinc-100 mb-1">Welcome to ChatBridge!</h2>
+        <p className="text-sm text-zinc-400 mb-6">What grade are you in?</p>
+        <div className="grid grid-cols-2 gap-3">
+          {GRADE_BANDS.map((g) => (
+            <button
+              key={g.id}
+              onClick={() => onSelect(g.id)}
+              className="flex flex-col items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 transition-all hover:border-violet-600/40 hover:bg-zinc-900 hover:scale-105"
+            >
+              <span className="text-2xl">{g.emoji}</span>
+              <span className="text-sm font-bold text-zinc-200">{g.label}</span>
+              <span className="text-[10px] text-zinc-500">Ages {g.ages}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [input, setInput] = useState("");
   const [activeApp, setActiveApp] = useState<ActiveApp | null>(null);
   const activeAppRef = useRef<ActiveApp | null>(null);
+  const { data: session } = useSession();
+  const userRole = (session?.user as any)?.role as string | undefined;
+  const canAccessTeacherControls = userRole === "teacher" || userRole === "admin";
   const [teacherControlsOpen, setTeacherControlsOpen] = useState(false);
+
+  // Grade level — stored in localStorage so it persists
+  const [gradeBand, setGradeBand] = useState<string | null>(null);
+  const gradeBandRef = useRef<string | null>(null);
+  useEffect(() => {
+    const saved = localStorage.getItem("chatbridge_grade");
+    if (saved) { setGradeBand(saved); gradeBandRef.current = saved; }
+  }, []);
+  const handleGradeSelect = (grade: string) => {
+    setGradeBand(grade);
+    gradeBandRef.current = grade;
+    localStorage.setItem("chatbridge_grade", grade);
+  };
 
   const {
     conversations,
@@ -82,6 +133,7 @@ export default function Home() {
         api: "/api/chat",
         body: () => ({
           conversationId: activeConvIdRef.current,
+          gradeBand: gradeBandRef.current,
           // Pass active app state so the API can inject it into system prompt
           appContext: appStateRef.current
             ? {
@@ -476,6 +528,11 @@ export default function Home() {
     prevBoardRef.current = null;
   }, []);
 
+  // Show grade selector for students who haven't picked yet
+  if (!gradeBand && userRole !== "teacher" && userRole !== "admin") {
+    return <GradeSelector onSelect={handleGradeSelect} />;
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar
@@ -527,14 +584,16 @@ export default function Home() {
         )}
       </main>
 
-      {/* Teacher Controls Button — fixed bottom-right */}
-      <button
-        onClick={() => setTeacherControlsOpen(true)}
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 shadow-lg transition-colors hover:border-violet-600/40 hover:bg-zinc-800 hover:text-zinc-100"
-      >
-        <Shield className="h-4 w-4 text-violet-400" />
-        Teacher Controls
-      </button>
+      {/* Teacher Controls Button — only visible to teachers/admins */}
+      {canAccessTeacherControls && (
+        <button
+          onClick={() => setTeacherControlsOpen(true)}
+          className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 shadow-lg transition-colors hover:border-violet-600/40 hover:bg-zinc-800 hover:text-zinc-100"
+        >
+          <Shield className="h-4 w-4 text-violet-400" />
+          Teacher Controls
+        </button>
+      )}
 
       {/* Teacher Controls Modal */}
       {teacherControlsOpen && (

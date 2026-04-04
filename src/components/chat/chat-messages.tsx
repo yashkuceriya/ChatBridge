@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MessageBubble } from "./message-bubble";
 import type { UIMessage } from "ai";
-import { Puzzle, Sparkles, Cloud, Music, BookOpen, Grid3x3, Dice6 } from "lucide-react";
+import { Puzzle, Sparkles, Cloud, Music, BookOpen, Grid3x3, Dice6, ChevronDown, ChevronRight, CheckCircle2, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface ChatMessagesProps {
@@ -25,6 +25,8 @@ function getTextContent(message: UIMessage): string {
 interface ToolCallInfo {
   toolName: string;
   state: string;
+  input?: Record<string, unknown>;
+  output?: Record<string, unknown>;
 }
 
 function getToolCalls(message: UIMessage): ToolCallInfo[] {
@@ -37,10 +39,127 @@ function getToolCalls(message: UIMessage): ToolCallInfo[] {
       results.push({
         toolName: partType.replace("tool-", ""),
         state: String((p as any).state ?? "unknown"),
+        input: (p as any).input as Record<string, unknown> | undefined,
+        output: (p as any).output as Record<string, unknown> | undefined,
       });
     }
   }
   return results;
+}
+
+function ToolCallCard({ tc }: { tc: ToolCallInfo }) {
+  const [expanded, setExpanded] = useState(false);
+  const isDone = tc.state === "output-available";
+  const isRunning = !isDone;
+  const appName = tc.toolName.split("_")[0];
+  const action = formatToolName(tc.toolName);
+
+  // Pick a color based on the app
+  const colorMap: Record<string, string> = {
+    chess: "violet", tictactoe: "rose", ludo: "cyan",
+    weather: "sky", spotify: "green",
+  };
+  const color = colorMap[appName] || "violet";
+
+  const borderColor = `border-${color}-500/20`;
+  const bgColor = `bg-${color}-500/5`;
+  const textColor = `text-${color}-400`;
+
+  // Summarize input/output for display
+  const inputSummary = tc.input
+    ? Object.entries(tc.input).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ")
+    : null;
+
+  const outputHighlights = tc.output ? getOutputHighlights(tc.toolName, tc.output) : null;
+
+  return (
+    <div className="px-4 py-1.5">
+      <div className={`ml-1 rounded-xl border ${borderColor} ${bgColor} overflow-hidden`}>
+        {/* Header — always visible */}
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-white/[0.02] transition-colors"
+        >
+          {isRunning ? (
+            <Loader2 className={`h-3.5 w-3.5 ${textColor} animate-spin`} />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
+          )}
+          <Puzzle className={`h-3 w-3 ${textColor}`} />
+          <span className={`text-xs font-medium ${textColor}`}>
+            {isRunning ? `${action}...` : action}
+          </span>
+          {inputSummary && (
+            <span className="text-[10px] text-zinc-500 truncate max-w-[200px]">
+              ({inputSummary})
+            </span>
+          )}
+          <span className="ml-auto">
+            {expanded ? (
+              <ChevronDown className="h-3 w-3 text-zinc-600" />
+            ) : (
+              <ChevronRight className="h-3 w-3 text-zinc-600" />
+            )}
+          </span>
+        </button>
+
+        {/* Expanded details */}
+        {expanded && (
+          <div className="border-t border-zinc-800/50 px-3 py-2 space-y-2">
+            {inputSummary && (
+              <div>
+                <span className="text-[10px] font-medium text-zinc-500 uppercase">Input</span>
+                <pre className="text-[11px] text-zinc-400 mt-0.5 whitespace-pre-wrap break-all">
+                  {JSON.stringify(tc.input, null, 2)}
+                </pre>
+              </div>
+            )}
+            {tc.output && (
+              <div>
+                <span className="text-[10px] font-medium text-zinc-500 uppercase">Result</span>
+                <pre className="text-[11px] text-zinc-400 mt-0.5 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+                  {JSON.stringify(tc.output, null, 2)}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Quick output summary — always visible when done */}
+        {isDone && outputHighlights && !expanded && (
+          <div className="border-t border-zinc-800/30 px-3 py-1.5">
+            <span className="text-[10px] text-zinc-500">{outputHighlights}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Extract a human-readable summary from tool output */
+function getOutputHighlights(toolName: string, output: Record<string, unknown>): string | null {
+  if (output.error) return `Error: ${output.error}`;
+
+  if (toolName === "chess_start_game") return output.message as string;
+  if (toolName === "chess_get_game_status") {
+    const ev = output.evaluationDescription || output.evaluationExplanation;
+    return `${output.legalMoveCount} legal moves | ${ev} | Best: ${output.bestMove}`;
+  }
+  if (toolName === "chess_get_hint") return `Best move: ${output.bestMove}`;
+  if (toolName === "chess_make_move") return output.message as string || `${output.move} → ${output.captured ? "captures!" : "ok"}`;
+
+  if (toolName === "tictactoe_start_game") return output.message as string;
+  if (toolName === "tictactoe_get_game_status") return `${(output.availableMoves as unknown[])?.length} moves available`;
+
+  if (toolName === "ludo_start_game") return output.message as string;
+  if (toolName === "ludo_roll_dice") return output.message as string;
+
+  if (toolName === "weather_get_current") return `${output.location}: ${output.temperature}, ${output.description}`;
+  if (toolName === "spotify_search") return `${output.resultCount} results${output.mock ? " (demo)" : ""}`;
+
+  if (output.message) return output.message as string;
+  if (output.status) return `Status: ${output.status}`;
+  return null;
 }
 
 const SUGGESTIONS = [
@@ -200,19 +319,7 @@ export function ChatMessages({
                 )}
 
                 {toolCalls.map((tc, i) => (
-                  <div key={`${message.id}-tool-${i}`} className="flex gap-3 px-4 py-1.5">
-                    <div className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-violet-500/20 bg-violet-500/10 px-3 py-1 text-xs text-violet-300 backdrop-blur-sm">
-                      <Puzzle className="h-3 w-3" />
-                      <span className="font-medium">
-                        {tc.state === "output-available"
-                          ? formatToolName(tc.toolName)
-                          : `${formatToolName(tc.toolName)}...`}
-                      </span>
-                      {tc.state === "output-available" && (
-                        <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-green-400" />
-                      )}
-                    </div>
-                  </div>
+                  <ToolCallCard key={`${message.id}-tool-${i}`} tc={tc} />
                 ))}
               </motion.div>
             );
