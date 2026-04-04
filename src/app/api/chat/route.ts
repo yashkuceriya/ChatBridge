@@ -14,6 +14,7 @@ import { registerBuiltinApps } from "@/lib/plugins/registry";
 import { moderateContent, k12ContentCheck } from "@/lib/moderation";
 import { logAudit } from "@/lib/orchestrator/audit";
 import { checkRateLimit, CHAT_RATE_LIMIT } from "@/lib/security/rate-limiter";
+import { withCircuitBreaker } from "@/lib/orchestrator/circuit-breaker";
 import { getCurrentPolicy } from "@/lib/orchestrator/policy-engine";
 import { findBestMove, evaluatePosition } from "@/lib/chess-engine";
 import { getServerSession } from "next-auth";
@@ -215,10 +216,13 @@ const SERVER_EXECUTED_TOOLS = new Set([
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { messages, appContext } = body;
+    const { messages, appContext, gradeBand } = body;
 
     const session = await getServerSession(authOptions);
-    const userId = (session?.user as any)?.id || "default-user";
+    if (!session?.user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { "Content-Type": "application/json" } });
+    }
+    const userId = (session.user as any).id as string;
     const conversationId = body.conversationId || "default";
 
     // --- Rate limiting ---
@@ -255,9 +259,11 @@ export async function POST(req: Request) {
     }
 
     // --- Pre-LLM moderation: check user input ---
+    // Circuit breaker wraps the external moderation API call
     if (userText.trim()) {
-      const [inputModeration, inputK12] = await Promise.all([
-        moderateContent(userText),
+      const moderationFallback = { flagged: process.env.NODE_ENV === "production", categories: ["circuit_open"] as string[], message: "Safety check temporarily unavailable. Please try again." };
+      const [{ result: inputModeration }, inputK12] = await Promise.all([
+        withCircuitBreaker("moderation", () => moderateContent(userText), moderationFallback),
         Promise.resolve(k12ContentCheck(userText)),
       ]);
 
@@ -307,6 +313,41 @@ export async function POST(req: Request) {
 
     // Build dynamic system prompt with app context
     let systemPrompt = SYSTEM_PROMPT;
+
+    // Adapt language to student's grade level
+    const gradeAdaptations: Record<string, string> = {
+      "K-2": `\n\n[GRADE LEVEL: K-2nd grade, ages 5-7]
+- Use very simple words (1-2 syllable)
+- Short sentences (5-8 words max)
+- Use emojis to make it fun: "Great job! 🌟"
+- Don't use chess notation like "Nf3" — say "Move your horse to the middle"
+- Call pieces by kid-friendly names: horse (knight), castle (rook), pointy hat (bishop)
+- Celebrate everything: "Wow, you moved a piece! That's awesome!"
+- Keep responses to 1-2 sentences max`,
+      "3-5": `\n\n[GRADE LEVEL: 3rd-5th grade, ages 8-10]
+- Use simple language but introduce proper terms: "This is called a 'fork' — your knight attacks two pieces!"
+- Short paragraphs (2-3 sentences)
+- Use proper chess notation but explain it: "Nf3 means moving your knight to f3"
+- Ask simple questions: "Can you count how many pieces you can capture?"
+- Be enthusiastic and encouraging`,
+      "6-8": `\n\n[GRADE LEVEL: 6th-8th grade, ages 11-13]
+- Use grade-appropriate vocabulary
+- Can discuss strategy concepts: center control, development, king safety
+- Use standard chess notation
+- Ask deeper questions: "Why do you think controlling the center matters?"
+- 2-4 sentences per response for move commentary`,
+      "9-12": `\n\n[GRADE LEVEL: 9th-12th grade, ages 14-18]
+- Treat them as capable thinkers
+- Discuss advanced concepts: pawn structure, piece activity, positional vs tactical
+- Use precise notation and terminology
+- Ask analytical questions: "What's the trade-off between castling now vs maintaining tension?"
+- Can give more detailed analysis when asked`,
+    };
+
+    if (gradeBand && gradeAdaptations[gradeBand]) {
+      systemPrompt += gradeAdaptations[gradeBand];
+    }
+
     const isGameOver = appContext?.gameOver === true;
     const activeAppId = appContext?.appId as string | undefined;
 
@@ -772,10 +813,11 @@ PGN: ${appContext.pgn || "none"}`;
       stopWhen: stepCountIs(2), // Allow: tool call → result → text response
       maxRetries: 2,
       async onFinish({ text }) {
-        // --- Post-LLM moderation: check output ---
+        // --- Post-LLM moderation: check output (circuit-breaker protected) ---
         if (text && text.trim()) {
-          const [outputModeration, outputK12] = await Promise.all([
-            moderateContent(text),
+          const moderationFallback = { flagged: false, categories: [] as string[] };
+          const [{ result: outputModeration }, outputK12] = await Promise.all([
+            withCircuitBreaker("moderation", () => moderateContent(text), moderationFallback),
             Promise.resolve(k12ContentCheck(text)),
           ]);
 

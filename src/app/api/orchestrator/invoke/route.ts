@@ -6,6 +6,7 @@ import { logAudit } from "@/lib/orchestrator/audit";
 import { moderateContent, k12ContentCheck } from "@/lib/moderation";
 import { createCapabilityToken } from "@/lib/security/capability-token";
 import { checkRateLimit, TOOL_RATE_LIMIT } from "@/lib/security/rate-limiter";
+import { withCircuitBreaker } from "@/lib/orchestrator/circuit-breaker";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
@@ -41,7 +42,10 @@ export async function POST(req: Request) {
     } = body;
 
     const session = await getServerSession(authOptions);
-    const userId = (session?.user as any)?.id || bodyUserId || "default-user";
+    if (!session?.user) {
+      return NextResponse.json({ allowed: false, reason: "Unauthorized" }, { status: 401 });
+    }
+    const userId = (session.user as any).id as string;
 
     if (!toolName || typeof toolName !== "string") {
       return NextResponse.json(
@@ -128,11 +132,15 @@ export async function POST(req: Request) {
     }
 
     // --- Step 5: Run moderation on args (K-12 safety) ---
+    // Wrapped in circuit breaker: if OpenAI moderation is down, fail open in dev, closed in prod
     const argsText = JSON.stringify(args ?? {});
-    const [moderationResult, k12Result] = await Promise.all([
-      moderateContent(argsText),
-      Promise.resolve(k12ContentCheck(argsText)),
-    ]);
+    const moderationFallback = { flagged: process.env.NODE_ENV === "production", categories: ["circuit_open"] as string[], message: "Safety check temporarily unavailable." };
+    const { result: moderationResult } = await withCircuitBreaker(
+      "moderation",
+      () => moderateContent(argsText),
+      moderationFallback
+    );
+    const k12Result = k12ContentCheck(argsText);
 
     if (moderationResult.flagged || k12Result.flagged) {
       const flagResult = moderationResult.flagged ? moderationResult : k12Result;

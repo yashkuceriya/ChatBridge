@@ -1,5 +1,8 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import bcrypt from "bcryptjs";
+import { db, schema } from "@/lib/db";
+import { eq } from "drizzle-orm";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -10,19 +13,38 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        // Demo auth: accept any email/password combo
-        // TODO: Replace with real DB lookup + bcrypt check against users table
         if (!credentials?.email || !credentials?.password) {
           return null;
         }
 
-        // Return a demo user object
-        return {
-          id: "demo-user-001",
-          email: credentials.email,
-          name: credentials.email.split("@")[0],
-          role: "student",
-        };
+        try {
+          // Look up user in database
+          const [user] = await db
+            .select()
+            .from(schema.users)
+            .where(eq(schema.users.email, credentials.email))
+            .limit(1);
+
+          if (!user || !user.passwordHash) {
+            return null;
+          }
+
+          // Verify password with bcrypt
+          const isValid = await bcrypt.compare(credentials.password, user.passwordHash);
+          if (!isValid) {
+            return null;
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name || user.email.split("@")[0],
+            role: user.role,
+          };
+        } catch (err) {
+          console.error("[Auth] DB lookup failed:", err);
+          return null;
+        }
       },
     }),
   ],
@@ -38,7 +60,6 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async jwt({ token, user }) {
-      // On initial sign-in, persist user fields into the JWT
       if (user) {
         token.id = user.id;
         token.role = (user as any).role ?? "student";
@@ -47,7 +68,6 @@ export const authOptions: NextAuthOptions = {
     },
 
     async session({ session, token }) {
-      // Expose id and role on the client-side session object
       if (session.user) {
         (session.user as any).id = token.id as string;
         (session.user as any).role = token.role as string;

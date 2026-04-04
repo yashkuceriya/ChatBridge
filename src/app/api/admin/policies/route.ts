@@ -6,16 +6,29 @@ import {
 } from "@/lib/orchestrator/policy-engine";
 import { getAllApps, registerBuiltinApps } from "@/lib/plugins/registry";
 import { logAudit } from "@/lib/orchestrator/audit";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 // Ensure apps are registered
 registerBuiltinApps();
+
+async function requireTeacherOrAdmin(): Promise<{ userId: string; role: string } | null> {
+  const session = await getServerSession(authOptions);
+  const role = (session?.user as any)?.role;
+  const userId = (session?.user as any)?.id;
+  if (!userId || (role !== "teacher" && role !== "admin")) return null;
+  return { userId, role };
+}
 
 /**
  * GET /api/admin/policies
  *
  * Returns the current policy with all apps and their enabled/disabled status.
+ * Requires teacher or admin role.
  */
 export async function GET() {
+  const auth = await requireTeacherOrAdmin();
+  if (!auth) return NextResponse.json({ error: "Forbidden — teacher or admin role required" }, { status: 403 });
   const policy = getCurrentPolicy();
   const allApps = getAllApps();
 
@@ -52,6 +65,9 @@ export async function GET() {
  * Body: { enabledApps: string[] }
  */
 export async function POST(req: Request) {
+  const auth = await requireTeacherOrAdmin();
+  if (!auth) return NextResponse.json({ error: "Forbidden — teacher or admin role required" }, { status: 403 });
+
   try {
     const body = await req.json();
 
