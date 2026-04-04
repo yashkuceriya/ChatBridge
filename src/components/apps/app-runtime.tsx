@@ -56,6 +56,17 @@ export function AppRuntime({
     win.postMessage(msg, "*"); // Same-origin in dev, use targetOrigin in prod
   }, []);
 
+  // --- Runtime misbehavior monitoring ---
+  // Track message rate per session to detect flooding
+  const messageCountRef = useRef(0);
+  const messageWindowStartRef = useRef(Date.now());
+  const violationCountRef = useRef(0);
+  const MAX_MESSAGES_PER_SECOND = 20;
+  const MAX_VIOLATIONS = 5;
+
+  // Only allow declared protocol message types
+  const ALLOWED_MESSAGE_TYPES = new Set(["APP_READY", "APP_STATE_UPDATE", "APP_COMPLETE", "APP_ERROR"]);
+
   // Listen for messages from iframe
   useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -63,6 +74,31 @@ export function AppRuntime({
       if (!data || typeof data.type !== "string") return;
       // Only handle our protocol messages
       if (!data.type.startsWith("APP_")) return;
+
+      // --- Runtime validation: reject unexpected message types ---
+      if (!ALLOWED_MESSAGE_TYPES.has(data.type)) {
+        violationCountRef.current++;
+        console.warn(`[AppRuntime] Blocked unexpected message type "${data.type}" from ${appId} (violation #${violationCountRef.current})`);
+        if (violationCountRef.current >= MAX_VIOLATIONS) {
+          console.error(`[AppRuntime] App "${appId}" exceeded violation limit — terminating session`);
+          setErrorMsg(`App "${appId}" was terminated for sending invalid messages`);
+          onError(`App "${appId}" terminated: protocol violation`);
+          return;
+        }
+        return;
+      }
+
+      // --- Rate limiting: detect message flooding ---
+      const now = Date.now();
+      if (now - messageWindowStartRef.current > 1000) {
+        messageCountRef.current = 0;
+        messageWindowStartRef.current = now;
+      }
+      messageCountRef.current++;
+      if (messageCountRef.current > MAX_MESSAGES_PER_SECOND) {
+        console.warn(`[AppRuntime] App "${appId}" sending messages too fast (${messageCountRef.current}/s) — throttling`);
+        return; // Drop the message
+      }
 
       console.log("[App→Host]", data.type, data);
 
