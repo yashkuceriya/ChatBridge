@@ -812,7 +812,30 @@ PGN: ${appContext.pgn || "none"}`;
       tools: toolDefs,
       stopWhen: stepCountIs(2), // Allow: tool call → result → text response
       maxRetries: 2,
-      async onFinish({ text }) {
+      async onFinish({ text, usage, finishReason }) {
+        // --- Log token usage for cost tracking ---
+        if (usage) {
+          const input = usage.inputTokens || 0;
+          const output = usage.outputTokens || 0;
+          const promptCost = (input / 1_000_000) * 2.50;     // GPT-4o input pricing
+          const completionCost = (output / 1_000_000) * 10.00; // GPT-4o output pricing
+          const totalCost = promptCost + completionCost;
+          logAudit({
+            eventType: "tool_call_executed",
+            userId,
+            conversationId,
+            payload: {
+              type: "llm_usage",
+              model: "gpt-4o",
+              inputTokens: input,
+              outputTokens: output,
+              totalTokens: input + output,
+              estimatedCost: `$${totalCost.toFixed(6)}`,
+              finishReason,
+            },
+          });
+        }
+
         // --- Post-LLM moderation: check output (circuit-breaker protected) ---
         if (text && text.trim()) {
           const moderationFallback = { flagged: false, categories: [] as string[] };
