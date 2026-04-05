@@ -189,7 +189,9 @@ export default function Home() {
           ?.filter((p: any) => p.type === "text")
           .map((p: any) => p.text)
           .join("\n") || "";
-        if (text && (msg.role === "user" || msg.role === "assistant")) {
+        // Skip auto-move messages — they're transient context, not conversation history
+        const isAutoMove = msg.role === "user" && /^\[(Move|Tic|Ludo)/.test(text);
+        if (text && !isAutoMove && (msg.role === "user" || msg.role === "assistant")) {
           fetch(`/api/conversations/${activeConversationId}/messages`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -198,11 +200,15 @@ export default function Home() {
         }
       }
 
-      // Auto-rename conversation from first user message
+      // Auto-rename conversation from first REAL user message (skip auto-move messages)
       if (messages.length >= 1) {
-        const firstUser = messages.find((m) => m.role === "user");
-        if (firstUser) {
-          const title = (firstUser.parts
+        const firstRealUser = messages.find((m) => {
+          if (m.role !== "user") return false;
+          const t = m.parts?.filter((p: any) => p.type === "text").map((p: any) => p.text).join("") || "";
+          return t && !/^\[(Move|Tic|Ludo)/.test(t);
+        });
+        if (firstRealUser) {
+          const title = (firstRealUser.parts
             ?.filter((p: any) => p.type === "text")
             .map((p: any) => p.text)
             .join(" ") || "").slice(0, 50) || "New Chat";
@@ -565,7 +571,7 @@ export default function Home() {
 
         {/* App Panel (slides in from right) — unified iframe runtime */}
         {activeApp && (
-          <div className="w-[520px] shrink-0 border-l border-zinc-800 bg-zinc-950 overflow-hidden h-full">
+          <div className="w-full sm:w-[420px] lg:w-[520px] shrink-0 border-l border-zinc-800 bg-zinc-950 overflow-hidden h-full">
             <AppRuntime
               appId={activeApp.appId}
               appName={activeApp.appName}

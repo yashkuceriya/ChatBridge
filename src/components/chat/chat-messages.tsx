@@ -304,6 +304,9 @@ export function ChatMessages({
             const text = getTextContent(message);
             const toolCalls = getToolCalls(message);
 
+            // Auto-move messages start with "[Move", "[Tic", "[Ludo" — render as system notifications
+            const isAutoMove = message.role === "user" && text && /^\[(Move|Tic|Ludo)/.test(text);
+
             return (
               <motion.div
                 key={`${message.id}-${idx}`}
@@ -311,12 +314,19 @@ export function ChatMessages({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, ease: "easeOut" }}
               >
-                {text && (
+                {text && isAutoMove ? (
+                  <div className="flex justify-center px-4 py-1">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/50 px-3 py-1 text-[11px] text-zinc-500">
+                      <span className="h-1.5 w-1.5 rounded-full bg-violet-500/50" />
+                      {text.replace(/^\[|\]$/g, "")}
+                    </span>
+                  </div>
+                ) : text ? (
                   <MessageBubble
                     role={message.role as "user" | "assistant"}
                     content={text}
                   />
-                )}
+                ) : null}
 
                 {toolCalls.map((tc, i) => (
                   <ToolCallCard key={`${message.id}-tool-${i}`} tc={tc} />
